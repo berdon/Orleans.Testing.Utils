@@ -1,0 +1,34 @@
+<Project DefaultTargets="Build">
+  <!-- Set the repository root into a variable -->
+  <PropertyGroup>
+    <SourceRoot>$(MSBuildThisFileDirectory)</SourceRoot>
+  </PropertyGroup>
+
+  <!-- Set output folder for created NuGet packages -->
+  <PropertyGroup>
+    <PackageOutputPath Condition=" '$(PackageOutputPath)'=='' ">$(SourceRoot)/Artifacts/$(Configuration)</PackageOutputPath>
+  </PropertyGroup>
+
+  <!-- Versioning properties -->
+  <PropertyGroup>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <VersionPrefix Condition=" '$(VersionPrefix)'=='' ">2.0.4</VersionPrefix>
+  </PropertyGroup>
+
+  <!-- For Debug builds generated a date/time dependent version suffix -->
+  <PropertyGroup Condition=" '$(Configuration)'=='Debug' ">
+    <VersionSuffix Condition=" '$(VersionSuffix)'=='' ">dev</VersionSuffix>
+    <VersionSuffix Condition=" '$(VersionDateSuffix)'!='' ">$(VersionSuffix)-$(VersionDateSuffix)</VersionSuffix>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Microsoft_Orleans_Core>2.0.3</Microsoft_Orleans_Core>
+    <Microsoft_Orleans_Core_Legacy>2.0.3</Microsoft_Orleans_Core_Legacy>
+    <Microsoft_Orleans_OrleansCodeGenerator_Build>2.0.3</Microsoft_Orleans_OrleansCodeGenerator_Build>
+    <Microsoft_Orleans_Runtime_Legacy>2.0.4</Microsoft_Orleans_Runtime_Legacy>
+    <Microsoft_Orleans_Server>2.0.4</Microsoft_Orleans_Server>
+    <Moq>4.7.10</Moq>
+    <Serilog>2.5.0</Serilog>
+    <xunit_abstractions>2.0.3</xunit_abstractions>
+  </PropertyGroup>
+</Project>

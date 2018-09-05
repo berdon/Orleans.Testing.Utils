@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28016.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Orleans.Testing.Utils", "src\Orleans.Testing.Utils\Orleans.Testing.Utils.csproj", "{CF986AB8-8003-4017-99B7-642FA8E2466E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Test|Any CPU = Test|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CF986AB8-8003-4017-99B7-642FA8E2466E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CF986AB8-8003-4017-99B7-642FA8E2466E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CF986AB8-8003-4017-99B7-642FA8E2466E}.Test|Any CPU.ActiveCfg = Test|Any CPU
+		{CF986AB8-8003-4017-99B7-642FA8E2466E}.Test|Any CPU.Build.0 = Test|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {41F9BF2F-CA5D-4CA8-A430-F44E79B8040C}
+	EndGlobalSection
+EndGlobal

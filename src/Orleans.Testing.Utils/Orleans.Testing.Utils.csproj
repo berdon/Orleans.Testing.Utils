@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Configurations>Debug;Release;Test</Configurations>
+    <LangVersion>latest</LangVersion>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    
+    <Authors>Austin Hanson</Authors>
+    <Company>Zuercher Technologies</Company>
+    <PackageId>Zuercher.Orleans.Testing.Utils</PackageId>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Test|AnyCPU'">
+    <DefineConstants>TRACE;TEST</DefineConstants>
+    <DebugType>full</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.OrleansCodeGenerator.Build" Version="$(Microsoft_Orleans_OrleansCodeGenerator_Build)" /> 
+    <PackageReference Include="Microsoft.Orleans.Core" Version="$(Microsoft_Orleans_Client)" />
+    <PackageReference Include="Microsoft.Orleans.Core.Legacy" Version="$(Microsoft_Orleans_Core_Legacy)" />
+    <PackageReference Include="Microsoft.Orleans.Runtime.Legacy" Version="$(Microsoft_Orleans_Runtime_Legacy)" />
+    <PackageReference Include="Microsoft.Orleans.Server" Version="$(Microsoft_Orleans_Client)" />
+    <PackageReference Include="Moq" Version="$(Moq)" />
+    <PackageReference Include="Serilog" Version="$(Serilog)" />
+    <PackageReference Include="xunit.abstractions" Version="$(xunit_abstractions)" />
+  </ItemGroup>
+</Project>
