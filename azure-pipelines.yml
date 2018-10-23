@@ -6,9 +6,6 @@
 pool:
   vmImage: 'Ubuntu 16.04'
 
-variables:
-  buildConfiguration: 'Release'
-
 steps:
 - script: dotnet restore
   displayName: 'Restoring Packages'
@@ -28,4 +25,4 @@ steps:
     command: push
     nuGetFeedType: external
     publishFeedCredentials: 'Zuercher.NuGet'
-    packagesToPush: './Artifacts/$(buildConfiguration)/*.nupkg'
+    packagesToPush: './Artifacts/**/*.nupkg'
