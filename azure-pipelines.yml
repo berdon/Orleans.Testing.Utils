@@ -18,5 +18,5 @@ steps:
   inputs:
     command: push
     nuGetFeedType: external
-    publishFeedCredentials: 'NuGet'
+    publishFeedCredentials: 'Zuercher.NuGet'
     packagesToPush: './Artifacts/Release/*.nupkg'
