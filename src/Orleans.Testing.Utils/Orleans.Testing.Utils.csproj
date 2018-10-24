@@ -17,7 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Orleans.OrleansCodeGenerator.Build" Version="$(Microsoft_Orleans_OrleansCodeGenerator_Build)" /> 
+    <PackageReference Include="Microsoft.Orleans.CodeGenerator.MSBuild" Version="$(Microsoft_Orleans_CodeGenerator_MSBuild)" /> 
     <PackageReference Include="Microsoft.Orleans.Core" Version="$(Microsoft_Orleans_Core)" />
     <PackageReference Include="Microsoft.Orleans.Core.Legacy" Version="$(Microsoft_Orleans_Core_Legacy)" />
     <PackageReference Include="Microsoft.Orleans.Runtime.Legacy" Version="$(Microsoft_Orleans_Runtime_Legacy)" />
