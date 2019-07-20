@@ -24,6 +24,7 @@ namespace SharedOrleansUtils
         /// <inheritdoc />
         public string ETag { get; set; }
 
+        public Type Type => typeof(T);
         /// <summary>Initializes a new instance of <see cref="GrainState{T}"/>.</summary>
         public GrainState()
         {
