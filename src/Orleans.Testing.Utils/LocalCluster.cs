@@ -53,9 +53,11 @@ namespace SharedOrleansUtils
         private Action<IServiceCollection> _serviceDelegate;
         private Action<IApplicationPartManager> _partDelegate;
 
-        public LocalClusterBuilder()
+        public LocalClusterBuilder(int siloPort = 11111, int gatewayPort = 30000, Guid? serviceId = null, string clusterId = null)
         {
-            _config = ClusterConfiguration.LocalhostPrimarySilo(11111, 30000);
+            _config = ClusterConfiguration.LocalhostPrimarySilo(siloPort, gatewayPort);
+            _config.Globals.ServiceId = serviceId ?? Guid.NewGuid();
+            _config.Globals.ClusterId = clusterId ?? Guid.NewGuid().ToString();
             _config.Defaults.PropagateActivityId = true;
             _config.Globals.RegisterBootstrapProvider<LocalClusterBootstrap>(nameof(LocalClusterBootstrap));
             _builder = new SiloHostBuilder();

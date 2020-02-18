@@ -35,13 +35,9 @@ namespace SharedOrleansUtils
             }
         }
 
-        public BaseClusterFixture()
+        public BaseClusterFixture(int siloPort = 11111, int gatewayPort = 30000, Guid? serviceId = null, string clusterId = null)
         {
-            var clusterBuilder = new LocalClusterBuilder();
-            clusterBuilder.ConfigureCluster(clusterConfiguration =>
-            {
-                clusterConfiguration.Globals.ClusterId = "Some-Cluster-Id";
-            });
+            var clusterBuilder = new LocalClusterBuilder(siloPort, gatewayPort, serviceId, clusterId);
             Log.Logger = new LoggerConfiguration()
                 .CreateLogger();
 
