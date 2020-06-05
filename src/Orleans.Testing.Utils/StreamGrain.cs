@@ -1,15 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Orleans;
 using Orleans.Concurrency;
 using Orleans.Streams;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     [Reentrant]
     public class StreamGrain : Grain, IStreamGrain
     {
+        internal new virtual IGrainFactory GrainFactory
+        {
+            get { return ((IGrainFactoryProvider)this.ServiceProvider.GetService(typeof(IGrainFactoryProvider)))?.GrainFactory ?? base.GrainFactory; }
+        }
+
         public static Dictionary<Guid, Task<List<dynamic>>> Tasks { get; } = new Dictionary<Guid, Task<List<dynamic>>>();
 
         public async Task Publish<T>(string providerName, Guid streamId, string streamNamespace, T item)

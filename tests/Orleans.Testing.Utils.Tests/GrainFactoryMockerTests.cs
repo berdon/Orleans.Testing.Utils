@@ -1,6 +1,5 @@
 using System;
 using Moq;
-using SharedOrleansUtils;
 using Xunit;
 
 namespace Orleans.Testing.Utils.Tests

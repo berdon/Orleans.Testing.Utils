@@ -1,18 +1,20 @@
-﻿using System;
+﻿using Moq;
+using Orleans;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading;
 using System.Threading.Tasks;
-using Moq;
-using Orleans;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     public class GrainFactoryMocker
     {
         private readonly IGrainFactory _grainFactory;
         private readonly Dictionary<Type, Dictionary<NullObject<Guid?>, Mock>> _mockGrainWithGuidKeyRegistry = new Dictionary<Type, Dictionary<NullObject<Guid?>, Mock>>();
         private readonly Dictionary<Type, Dictionary<(Guid?, string), Mock>> _mockGrainWithGuidCompoundKeyRegistry = new Dictionary<Type, Dictionary<(Guid?, string), Mock>>();
+        private readonly Dictionary<Type, Dictionary<(long?, string), Mock>> _mockGrainWithLongCompoundKeyRegistry = new Dictionary<Type, Dictionary<(long?, string), Mock>>();
 
         internal Mock<IGrainFactory> Mock { get; private set; }
 
@@ -64,11 +66,26 @@ namespace SharedOrleansUtils
             }
         }
 
+        public void VerifyGuidGrainCalled<TGrain>(Guid primaryKey, Expression<Action<TGrain>> expression, Times times)
+            where TGrain : class, IGrainWithGuidKey
+        {
+            GetGuidGrain<TGrain>(primaryKey).Verify(expression, times);
+        }
+
         public void VerifyGuidCompoundGrainActivated<TGrain>(Guid primaryKey, string compoundKey)
             where TGrain : class, IGrainWithGuidCompoundKey
         {
             Mock.Verify(x => x.GetGrain<TGrain>(
                 It.Is<Guid>(guid => guid == primaryKey),
+                It.Is<string>(@string => @string.Equals(compoundKey, StringComparison.InvariantCulture)),
+                It.IsAny<string>()));
+        }
+
+        public void VerifyLongCompoundGrainActivated<TGrain>(long primaryKey, string compoundKey)
+            where TGrain : class, IGrainWithIntegerCompoundKey
+        {
+            Mock.Verify(x => x.GetGrain<TGrain>(
+                It.Is<long>(id => id == primaryKey),
                 It.Is<string>(@string => @string.Equals(compoundKey, StringComparison.InvariantCulture)),
                 It.IsAny<string>()));
         }
@@ -80,6 +97,12 @@ namespace SharedOrleansUtils
                 It.Is<Guid>(guid => guid == primaryKey),
                 It.Is<string>(@string => @string.Equals(compoundKey, StringComparison.InvariantCulture)),
                 It.IsAny<string>()), times);
+        }
+
+        public void VerifyGuidCompoundGrainCalled<TGrain>(Guid primaryKey, string compoundKey, Expression<Action<TGrain>> expression, Times times)
+            where TGrain : class, IGrainWithGuidCompoundKey
+        {
+            GetGuidCompoundGrain<TGrain>(primaryKey, compoundKey).Verify(expression, times);
         }
 
         public void VerifyGuidCompoundGrainActivated<TGrain>(IEnumerable<(Guid PrimaryKey, string CompoundKey)> keys)
@@ -156,6 +179,23 @@ namespace SharedOrleansUtils
             where TGrain : class, IGrainWithGuidCompoundKey
         {
             return _mockGrainWithGuidCompoundKeyRegistry[typeof(TGrain)]?[(guid, secondaryKey)] as Mock<TGrain>;
+        }
+
+        public Task GetAwaiterForGrainCall<TGrain>(Expression<Func<TGrain, Task>> func, TimeSpan timeout, Guid? primaryKey = null)
+            where TGrain : class, IGrainWithGuidKey
+        {
+            var semaphoreSlim = new SemaphoreSlim(0);
+
+            if (_mockGrainWithGuidKeyRegistry.ContainsKey(typeof(TGrain)) && _mockGrainWithGuidKeyRegistry[typeof(TGrain)].ContainsKey(primaryKey) == true)
+            {
+                GetGuidGrain<TGrain>().Setup(func).Callback(() => semaphoreSlim.Release());
+            }
+            else
+            {
+                GuidGrain<TGrain>(primaryKey, grain => grain.Setup(func).Callback(() => semaphoreSlim.Release()).Returns(Task.CompletedTask));
+            }
+
+            return semaphoreSlim.WaitAsync(timeout);
         }
 
         public GrainFactoryMocker GuidGrain<TGrain>(Action<Mock<TGrain>> mocker = null, Action<Guid> callback = null)
@@ -268,6 +308,40 @@ namespace SharedOrleansUtils
                     It.Is<string>(s => !string.IsNullOrEmpty(compoundKey) ? compoundKey.Equals(s, StringComparison.InvariantCulture) : true),
                     It.IsAny<string>()))
                 .Callback((Guid g, string k, string c) => callback?.Invoke(g, k))
+                .Returns(() =>
+                {
+                    return mockGrain.Object;
+                });
+
+            return this;
+        }
+
+        public GrainFactoryMocker LongCompoundGrain<TGrain>(long? primaryKey = null, string compoundKey = null, Action<Mock<TGrain>> mocker = null, Action<long, string> callback = null)
+            where TGrain : class, IGrainWithIntegerCompoundKey
+        {
+            var mockGrain = new Mock<TGrain>();
+            mockGrain.DefaultValue = DefaultValue.Mock;
+
+            if (!_mockGrainWithLongCompoundKeyRegistry.TryGetValue(typeof(TGrain), out var registry))
+            {
+                registry = new Dictionary<(long?, string), Mock>();
+                _mockGrainWithLongCompoundKeyRegistry.Add(typeof(TGrain), registry);
+            }
+
+            var key = (primaryKey, compoundKey);
+
+            // We've already mocked this grain
+            if (registry.ContainsKey(key)) throw new Exception("LongCompoundGrain already mocked - you must call ClearLongCompoundGrain() first");
+
+            registry.Add(key, mockGrain);
+            mocker?.Invoke(mockGrain);
+
+            Mock
+                .Setup(x => x.GetGrain<TGrain>(
+                    It.Is<long>(g => primaryKey.HasValue ? g == primaryKey : true),
+                    It.Is<string>(s => !string.IsNullOrEmpty(compoundKey) ? compoundKey.Equals(s, StringComparison.InvariantCulture) : true),
+                    It.IsAny<string>()))
+                .Callback((long g, string k, string c) => callback?.Invoke(g, k))
                 .Returns(() =>
                 {
                     return mockGrain.Object;

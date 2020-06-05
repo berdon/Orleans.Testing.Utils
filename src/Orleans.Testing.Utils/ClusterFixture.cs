@@ -1,51 +1,99 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Orleans;
+using Orleans.CodeGeneration;
+using Orleans.Hosting;
+using Orleans.Providers;
+using Orleans.Runtime;
+using Orleans.Storage;
+using Orleans.Streams;
+using Orleans.Utilities;
+using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using Xunit.Abstractions;
-using Serilog;
-using System.Linq;
-using Orleans.Storage;
-using Orleans.Runtime;
-using Orleans.Streams;
-using Orleans.Hosting;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
-    public class BaseClusterFixture : IDisposable
+    public class ClusterFixture : IDisposable
     {
-        public LocalCluster Cluster { get; private set; }
-        public IGrainFactory GrainFactory => Cluster.GrainFactory;
-        public Task Dispatch(Func<Task> func) => Cluster.Dispatch(func);
-        public GrainFactoryMocker Mock => _mocker;
-        public IServiceProvider ClusterServices => Cluster.Services;
-
-        private readonly GrainFactoryMocker _mocker;
+        private GrainFactoryMocker _mocker;
         private ILogger _logger;
+
+        public LocalCluster Cluster { get; private set; }
+
+        public IGrainFactory GrainFactory
+        {
+            get
+            {
+                EnsureClusterIsRunning();
+                return Cluster.GrainFactory;
+            }
+        }
+
+        public GrainFactoryMocker Mock
+        {
+            get
+            {
+                EnsureClusterIsRunning();
+                return _mocker;
+            }
+        }
+
+        public IServiceProvider ClusterServices
+        {
+            get
+            {
+                EnsureClusterIsRunning();
+                return Cluster.Services;
+            }
+        }
+
         public ITestOutputHelper OutputHelper
         {
             set
             {
                 _logger = new LoggerConfiguration()
+                    .MinimumLevel.Is(Serilog.Events.LogEventLevel.Verbose)
                     .WriteTo
                     .Sink(new TestOutputHelperSink(null, value))
                     .CreateLogger();
+
+                Log.Logger = _logger;
             }
         }
+        public ILogger Logger => _logger;
 
-        public BaseClusterFixture(int siloPort = 11111, int gatewayPort = 30000, Guid? serviceId = null, string clusterId = null)
+        public ILogger CreateLogger<T>() => _logger.ForContext<T>();
+
+        public virtual async Task Start(int siloPort = 11111, int gatewayPort = 30000, string serviceId = null, string clusterId = null)
         {
+            EnsureClusterIsNotRunning();
             var clusterBuilder = new LocalClusterBuilder(siloPort, gatewayPort, serviceId, clusterId);
-            Log.Logger = new LoggerConfiguration()
-                .CreateLogger();
 
             // Storage provider setup
             var storageProviders = GetType().GetCustomAttributes(typeof(MockStorageProvider), true).Select(p => (MockStorageProvider)p);
             foreach (var provider in storageProviders)
             {
-                clusterBuilder.ConfigureCluster(c => c.Globals.RegisterStorageProvider<MockMemoryStorageProvider>(provider.ProviderName));
+                clusterBuilder.ConfigureServices(services =>
+                {
+                    services.AddSingletonNamedService<IGrainStorage>(provider.ProviderName, (sp, n) => ActivatorUtilities.CreateInstance<MockMemoryStorageProvider>(sp, provider.ProviderName));
+
+                    if (typeof(ILifecycleParticipant<ISiloLifecycle>).IsAssignableFrom(typeof(MockMemoryStorageProvider)))
+                    {
+                        services.AddSingletonNamedService<ILifecycleParticipant<ISiloLifecycle>>(provider.ProviderName, (svc, n) => (ILifecycleParticipant<ISiloLifecycle>)svc.GetRequiredServiceByName<IGrainStorage>(provider.ProviderName));
+                    }
+
+                    if (typeof(IControllable).IsAssignableFrom(typeof(MockMemoryStorageProvider)))
+                    {
+                        services.AddSingletonNamedService<IControllable>(provider.ProviderName, (svc, n) => (IControllable)svc.GetRequiredServiceByName<IGrainStorage>(provider.ProviderName));
+                    }
+                });
             }
 
             // Stream provider setup
@@ -73,10 +121,16 @@ namespace SharedOrleansUtils
                     OnConfigureServices(s);
                 });
 
-            Cluster = clusterBuilder
-                .Build();
-            Cluster.StartAsync().Wait();
+            Cluster = clusterBuilder.Build();
+            await Cluster.StartAsync();
             _mocker = new GrainFactoryMocker(GrainFactory);
+            await OnReady();
+        }
+
+        public void Dispose()
+        {
+            EnsureClusterIsRunning();
+            Cluster.Dispose();
         }
 
         protected virtual void OnConfigure(LocalClusterBuilder clusterBuilder) { }
@@ -85,23 +139,55 @@ namespace SharedOrleansUtils
 
         protected virtual void OnConfigureServices(IServiceCollection services) { }
 
+        protected virtual Task OnReady() => Task.CompletedTask;
+
+        public Task Dispatch(Func<Task> func)
+        {
+            EnsureClusterIsRunning();
+            return Cluster.Dispatch(func);
+        }
+
+        public Task Dispatch<TFixture>(Func<TFixture, Task> func) where TFixture : ClusterFixture
+        {
+            EnsureClusterIsRunning();
+            return Cluster.Dispatch(() => func((TFixture)this));
+        }
+
         public async Task<TGrainState> GetGrainState<TGrain, TGrainState>(IGrain grain, string storageProviderName)
             where TGrain : Grain<TGrainState>, IGrain
             where TGrainState : new()
         {
+            EnsureClusterIsRunning();
+
             var storageProvider = ClusterServices.GetServiceByName<IGrainStorage>(storageProviderName);
             var grainState = new GrainState<TGrainState>();
             await storageProvider.ReadStateAsync(typeof(TGrain).FullName, grain as GrainReference, grainState);
             return grainState.State;
         }
 
+        public async Task SetGrainState<TGrain, TGrainState>(IGrain grain, TGrainState grainState, string storageProviderName)
+            where TGrain : Grain<TGrainState>, IGrain
+            where TGrainState : new()
+        {
+            EnsureClusterIsRunning();
+
+            var storageProvider = ClusterServices.GetServiceByName<IGrainStorage>(storageProviderName);
+            await storageProvider.WriteStateAsync(typeof(TGrain).FullName, grain as GrainReference, new GrainState<TGrainState>(grainState));
+        }
+
         public IStreamProvider GetStreamProvider(string providerName)
         {
+            EnsureClusterIsRunning();
+
             return ClusterServices.GetServiceByName<IStreamProvider>(providerName);
         }
 
         public async Task PublishToStream<T>(string providerName, Guid streamId, string streamNamespace, T item)
         {
+            EnsureClusterIsRunning();
+
+            _logger?.Verbose("Publishing {Item} to {Provider}://{Namespace}-{Id}", typeof(T), streamNamespace, streamId);
+
             var requestId = Guid.NewGuid();
             var streamGrain = GrainFactory.GetGrain<IStreamGrain>(requestId);
             await streamGrain.Publish<T>(providerName, streamId, streamNamespace, item);
@@ -109,19 +195,133 @@ namespace SharedOrleansUtils
 
         public async Task<Task<List<dynamic>>> SubscribeAndGetTaskAwaiter<T>(string providerName, Guid streamId, string streamNamespace, int count)
         {
+            EnsureClusterIsRunning();
+
             var requestId = Guid.NewGuid();
             var streamGrain = GrainFactory.GetGrain<IStreamGrain>(requestId);
             await streamGrain.Subscribe<T>(providerName, streamId, streamNamespace, count);
             return StreamGrain.Tasks[requestId];
         }
 
-        public void Dispose()
+        public Task InvokeMethodAsync<TGrain>(Expression<Func<TGrain, Task>> method, Guid primaryKey, params object[] arguments)
+            where TGrain : IGrainWithGuidKey
         {
-            Cluster.Dispose();
+            EnsureClusterIsRunning();
+
+            var grain = GrainFactory.GetGrain<TGrain>(primaryKey);
+            var grainReferenceRuntime = ClusterServices.GetRequiredService<IGrainReferenceRuntime>();
+            var methodId = GetMethodId(method);
+            return grainReferenceRuntime.InvokeMethodAsync<object>((GrainReference)(object)grain, methodId, arguments, InvokeMethodOptions.None, null);
+        }
+
+        public Task<TResult> InvokeMethodAsync<TGrain, TResult>(Expression<Func<TGrain, TResult>> method, Guid primaryKey, params object[] arguments)
+            where TGrain : IGrainWithGuidKey
+        {
+            EnsureClusterIsRunning();
+
+            var grain = GrainFactory.GetGrain<TGrain>(primaryKey);
+            var grainReferenceRuntime = ClusterServices.GetRequiredService<IGrainReferenceRuntime>();
+            var methodId = GetMethodId(method);
+            return grainReferenceRuntime.InvokeMethodAsync<TResult>((GrainReference)(object)grain, methodId, arguments, InvokeMethodOptions.None, null);
+        }
+
+        public Task InvokeMethodAsync<TGrain>(Expression<Func<TGrain, Task>> method, Guid primaryKey, string secondaryKey, params object[] arguments)
+            where TGrain : IGrainWithGuidCompoundKey
+        {
+            EnsureClusterIsRunning();
+
+            var grain = GrainFactory.GetGrain<TGrain>(primaryKey, secondaryKey);
+            var grainReferenceRuntime = ClusterServices.GetRequiredService<IGrainReferenceRuntime>();
+            var methodId = GetMethodId(method);
+            return grainReferenceRuntime.InvokeMethodAsync<object>((GrainReference)(object)grain, methodId, arguments, InvokeMethodOptions.None, null);
+        }
+
+        public Task<TResult> InvokeMethodAsync<TGrain, TResult>(Expression<Func<TGrain, TResult>> method, Guid primaryKey, string secondaryKey, params object[] arguments)
+            where TGrain : IGrainWithGuidCompoundKey
+        {
+            EnsureClusterIsRunning();
+
+            var grain = GrainFactory.GetGrain<TGrain>(primaryKey, secondaryKey);
+            var grainReferenceRuntime = ClusterServices.GetRequiredService<IGrainReferenceRuntime>();
+            var methodId = GetMethodId(method);
+            return grainReferenceRuntime.InvokeMethodAsync<TResult>((GrainReference)(object)grain, methodId, arguments, InvokeMethodOptions.None, null);
+        }
+
+        private static int GetMethodId<TGrain, TResult>(Expression<Func<TGrain, TResult>> method)
+        {
+            var methodCall = method.Body as MethodCallExpression;
+            var methodInfo = methodCall.Method;
+
+            var attr = methodInfo.GetCustomAttribute<MethodIdAttribute>(true);
+            if (attr != null) return attr.MethodId;
+
+            var result = FormatMethodForIdComputation(methodInfo);
+            return Orleans.Runtime.Utils.CalculateIdHash(result);
+        }
+
+        // Straight outta compton
+        // https://github.com/dotnet/orleans/blob/master/src/Orleans.Core/CodeGeneration/GrainInterfaceUtils.cs
+        private static string FormatMethodForIdComputation(MethodInfo methodInfo)
+        {
+            var strMethodId = new StringBuilder(methodInfo.Name);
+
+            if (methodInfo.IsGenericMethodDefinition)
+            {
+                strMethodId.Append('<');
+                var first = true;
+                foreach (var arg in methodInfo.GetGenericArguments())
+                {
+                    if (!first) strMethodId.Append(',');
+                    else first = false;
+                    strMethodId.Append(RuntimeTypeNameFormatter.Format(arg));
+                }
+
+                strMethodId.Append('>');
+            }
+
+            strMethodId.Append('(');
+            ParameterInfo[] parameters = methodInfo.GetParameters();
+            bool bFirstTime = true;
+            foreach (ParameterInfo info in parameters)
+            {
+                if (!bFirstTime)
+                    strMethodId.Append(',');
+                var pt = info.ParameterType;
+                if (pt.IsGenericParameter)
+                {
+                    strMethodId.Append(pt.Name);
+                }
+                else
+                {
+                    strMethodId.Append(RuntimeTypeNameFormatter.Format(info.ParameterType));
+                }
+
+                bFirstTime = false;
+            }
+
+            strMethodId.Append(')');
+            var result = strMethodId.ToString();
+            return result;
+        }
+
+        private void EnsureClusterIsRunning()
+        {
+            if (Cluster == null)
+            {
+                throw new NotSupportedException("Cluster is not running.");
+            }
+        }
+
+        private void EnsureClusterIsNotRunning()
+        {
+            if (Cluster != null)
+            {
+                throw new NotSupportedException("Cluster is already running.");
+            }
         }
     }
 
-    public class BaseClusterFixture<T1> : BaseClusterFixture
+    public class ClusterFixture<T1> : ClusterFixture
         where T1 : class
     {
         public Mock<T1> Dependency1 { get; } = new Mock<T1>() { DefaultValue = DefaultValue.Mock };
@@ -133,7 +333,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2> : BaseClusterFixture
+    public class ClusterFixture<T1, T2> : ClusterFixture
         where T1 : class
         where T2 : class
     {
@@ -148,7 +348,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class
@@ -166,7 +366,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3, T4> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3, T4> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class
@@ -187,7 +387,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3, T4, T5> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3, T4, T5> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class
@@ -211,7 +411,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3, T4, T5, T6> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3, T4, T5, T6> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class
@@ -238,7 +438,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3, T4, T5, T6, T7> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3, T4, T5, T6, T7> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class
@@ -268,7 +468,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3, T4, T5, T6, T7, T8> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3, T4, T5, T6, T7, T8> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class
@@ -301,7 +501,7 @@ namespace SharedOrleansUtils
         }
     }
 
-    public class BaseClusterFixture<T1, T2, T3, T4, T5, T6, T7, T8, T9> : BaseClusterFixture
+    public class ClusterFixture<T1, T2, T3, T4, T5, T6, T7, T8, T9> : ClusterFixture
         where T1 : class
         where T2 : class
         where T3 : class

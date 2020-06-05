@@ -1,11 +1,9 @@
 ﻿using Serilog.Core;
 using Serilog.Events;
 using System;
-using System.Collections.Generic;
-using System.Text;
 using Xunit.Abstractions;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     public class TestOutputHelperSink : ILogEventSink
     {

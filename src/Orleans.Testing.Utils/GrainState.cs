@@ -1,12 +1,14 @@
 ﻿using System;
 using Orleans;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     [Serializable]
-    public class GrainState<T> : IGrainState
+    public class GrainState<T> : IGrainState where T : new()
     {
         public T State;
+
+        public Type Type => typeof(T);
 
         object IGrainState.State
         {
@@ -25,7 +27,7 @@ namespace SharedOrleansUtils
         public string ETag { get; set; }
 
         /// <summary>Initializes a new instance of <see cref="GrainState{T}"/>.</summary>
-        public GrainState()
+        public GrainState() : this(new T(), null)
         {
         }
 

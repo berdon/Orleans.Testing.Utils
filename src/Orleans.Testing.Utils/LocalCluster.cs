@@ -1,72 +1,72 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Orleans;
 using Orleans.ApplicationParts;
+using Orleans.Configuration;
 using Orleans.Hosting;
 using Orleans.Providers;
-using Orleans.Runtime.Configuration;
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     public class LocalCluster : IDisposable
     {
+        internal static TaskScheduler OrleansScheduler;
+
         private readonly ISiloHost _siloHost;
-        private TaskScheduler _orleansScheduler;
+        
         public IGrainFactory GrainFactory => _siloHost.Services.GetRequiredService<IProviderRuntime>().GrainFactory;
+        public IServiceProvider Services => _siloHost.Services;
 
         internal LocalCluster(ISiloHost siloHost)
         {
             _siloHost = siloHost;
         }
 
-        public async Task StartAsync()
+        public async Task StartAsync(CancellationToken cancellationToken = default)
         {
-            await _siloHost.StartAsync();
-            _orleansScheduler = LocalClusterBootstrap.OrleansScheduler;
+            await _siloHost.StartAsync(cancellationToken);
         }
 
-        public Task StopAsync()
+        public Task StopAsync(CancellationToken cancellationToken = default)
         {
-            return _siloHost.StopAsync();
+            return _siloHost.StopAsync(cancellationToken);
         }
 
-        public void Dispose()
+        public async void Dispose()
         {
-            _siloHost.StopAsync().Wait();
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.Cancel();
+                await StopAsync(cts.Token);
+            }
         }
 
         public Task Dispatch(Func<Task> func)
         {
-            if (_orleansScheduler == null) throw new Exception("Hrm derp?");
-            return Task.Factory.StartNew(func, CancellationToken.None, TaskCreationOptions.None, scheduler: _orleansScheduler).Unwrap();
+            if (OrleansScheduler == null) throw new Exception("Hrm derp?");
+            return Task.Factory.StartNew(func, CancellationToken.None, TaskCreationOptions.None, scheduler: OrleansScheduler).Unwrap();
         }
-
-        public IServiceProvider Services => _siloHost.Services;
     }
 
     public class LocalClusterBuilder
     {
-        private readonly ClusterConfiguration _config;
+        private readonly (int SiloPort, int GatewayPort) _ports;
+        private readonly (string ServiceId, string ClusterId) _clusterOptions;
         private readonly ISiloHostBuilder _builder;
-        private Action<IServiceCollection> _serviceDelegate;
+        private readonly List<Action<IServiceCollection>> _serviceDelegates = new List<Action<IServiceCollection>>();
         private Action<IApplicationPartManager> _partDelegate;
 
-        public LocalClusterBuilder(int siloPort = 11111, int gatewayPort = 30000, Guid? serviceId = null, string clusterId = null)
+        public LocalClusterBuilder(int siloPort = 11111, int gatewayPort = 30000, string serviceId = null, string clusterId = null)
         {
-            _config = ClusterConfiguration.LocalhostPrimarySilo(siloPort, gatewayPort);
-            _config.Globals.ServiceId = serviceId ?? Guid.NewGuid();
-            _config.Globals.ClusterId = clusterId ?? Guid.NewGuid().ToString();
-            _config.Defaults.PropagateActivityId = true;
-            _config.Globals.RegisterBootstrapProvider<LocalClusterBootstrap>(nameof(LocalClusterBootstrap));
-            _builder = new SiloHostBuilder();
-        }
+            serviceId ??= Guid.NewGuid().ToString();
+            clusterId ??= Guid.NewGuid().ToString();
 
-        public LocalClusterBuilder ConfigureCluster(Action<ClusterConfiguration> configDelegate)
-        {
-            configDelegate?.Invoke(_config);
-            return this;
+            _ports = (siloPort, gatewayPort);
+            _clusterOptions = (serviceId, clusterId);
+            _builder = new SiloHostBuilder();
         }
 
         public LocalClusterBuilder ConfigureHost(Action<ISiloHostBuilder> configDelegate)
@@ -77,7 +77,7 @@ namespace SharedOrleansUtils
 
         public LocalClusterBuilder ConfigureServices(Action<IServiceCollection> serviceDelegate)
         {
-            _serviceDelegate = serviceDelegate;
+            _serviceDelegates.Add(serviceDelegate);
             return this;
         }
 
@@ -89,38 +89,26 @@ namespace SharedOrleansUtils
 
         public LocalCluster Build()
         {
-            var siloHost = _builder
-                .UseConfiguration(_config)
-                //.ConfigureSiloName("Test Cluster")
+            var builder = _builder
+                .UseLocalhostClustering(_ports.SiloPort, _ports.GatewayPort, serviceId: _clusterOptions.ServiceId, clusterId: _clusterOptions.ClusterId)
+                .Configure<MessagingOptions>(x => x.PropagateActivityId = true)
                 .ConfigureApplicationParts(appParts =>
                 {
                     appParts.AddFromApplicationBaseDirectory().WithReferences();
                     appParts.AddFromAppDomain().WithReferences();
                     _partDelegate?.Invoke(appParts);
                 })
-                .ConfigureServices(_serviceDelegate)
-                .Build();
+                .AddStartupTask((services, cancellationToken) =>
+                {
+                    LocalCluster.OrleansScheduler = TaskScheduler.Current;
+                    return Task.CompletedTask;
+                });
 
+            foreach (var serviceDelegate in _serviceDelegates)
+                builder = builder.ConfigureServices(serviceDelegate);
+
+            var siloHost = builder.Build();
             return new LocalCluster(siloHost);
-        }
-    }
-
-    internal class LocalClusterBootstrap : IBootstrapProvider
-    {
-        internal static TaskScheduler OrleansScheduler;
-
-        public string Name { get; set; }
-
-        public Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
-        {
-            Name = name;
-            OrleansScheduler = TaskScheduler.Current;
-            return Task.CompletedTask;
-        }
-
-        public Task Close()
-        {
-            return Task.CompletedTask;
         }
     }
 }
