@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Text;
+﻿using System.ComponentModel;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     /// <summary>
     /// Useful for null-value keys in Dictionaries.

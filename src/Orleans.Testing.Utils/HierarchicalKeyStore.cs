@@ -9,7 +9,7 @@ using System.Text;
 /// <summary>
 /// Ripped from https://github.com/dotnet/orleans/blob/master/src/OrleansProviders/Storage/HierarchicalKeyStore.cs
 /// </summary>
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     internal class HierarchicalKeyStore : ILocalDataStore
     {

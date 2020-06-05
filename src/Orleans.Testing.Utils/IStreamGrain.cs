@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using Orleans;
 
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     public interface IStreamGrain : IGrainWithGuidKey
     {

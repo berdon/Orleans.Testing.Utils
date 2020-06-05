@@ -22,12 +22,10 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Microsoft_Orleans_Core>2.1.0</Microsoft_Orleans_Core>
-    <Microsoft_Orleans_Core_Legacy>2.1.0</Microsoft_Orleans_Core_Legacy>
-    <Microsoft_Orleans_OrleansCodeGenerator_Build>2.1.0</Microsoft_Orleans_OrleansCodeGenerator_Build>
-    <Microsoft_Orleans_Runtime_Legacy>2.1.0</Microsoft_Orleans_Runtime_Legacy>
-    <Microsoft_Orleans_Server>2.1.0</Microsoft_Orleans_Server>
-    <Moq>4.7.10</Moq>
+    <Microsoft_Orleans_Core>3.1.7</Microsoft_Orleans_Core>
+    <Microsoft_Orleans_OrleansCodeGenerator_Build>3.1.7</Microsoft_Orleans_OrleansCodeGenerator_Build>
+    <Microsoft_Orleans_Server>3.1.7</Microsoft_Orleans_Server>
+    <Moq>4.9.0</Moq>
     <Serilog>2.5.0</Serilog>
     <xunit_abstractions>2.0.3</xunit_abstractions>
   </PropertyGroup>
