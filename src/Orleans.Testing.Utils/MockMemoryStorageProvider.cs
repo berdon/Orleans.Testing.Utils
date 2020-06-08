@@ -1,25 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Providers;
 using Orleans.Runtime;
 using Orleans.Serialization;
 using Orleans.Storage;
-using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Ripped from https://github.com/dotnet/orleans/blob/master/test/TestInfrastructure/TestExtensions/MockStorageProvider.cs
 /// </summary>
-namespace SharedOrleansUtils
+namespace Orleans.Testing.Utils
 {
     [DebuggerDisplay("MockStorageProvider:{Name}")]
-    public class MockMemoryStorageProvider : IControllable, IStorageProvider
+    public class MockMemoryStorageProvider : IControllable, IGrainStorage
     {
         public enum Commands
         {
@@ -31,7 +30,7 @@ namespace SharedOrleansUtils
             ResetHistory
         }
         [Serializable]
-        public class StateForTest
+        public class StateForTest 
         {
             public int InitCount { get; set; }
             public int CloseCount { get; set; }
@@ -55,13 +54,29 @@ namespace SharedOrleansUtils
 
         public string Name { get; private set; }
 
-        public MockMemoryStorageProvider()
-            : this(2)
+        public MockMemoryStorageProvider(ILoggerFactory loggerFactory, SerializationManager serializationManager)
+            : this(Guid.NewGuid().ToString(), 2, loggerFactory, serializationManager)
         { }
-        public MockMemoryStorageProvider(int numKeys)
+
+        public MockMemoryStorageProvider(string name, ILoggerFactory loggerFactory, SerializationManager serializationManager)
+            : this(name, 2, loggerFactory, serializationManager)
+        { }
+
+        public MockMemoryStorageProvider(string name, int numKeys, ILoggerFactory loggerFactory, SerializationManager serializationManager)
         {
             _id = ++_instanceNum;
             this.numKeys = numKeys;
+
+            this.Name = name;
+            this.logger = loggerFactory.CreateLogger(string.Format("Storage.{0}-{1}", this.GetType().Name, this._id));
+
+            logger.Info(0, "Init Name={0}", name);
+            this.serializationManager = serializationManager;
+            Interlocked.Increment(ref initCount);
+
+            StateStore = new HierarchicalKeyStore(numKeys);
+
+            logger.Info(0, "Finished Init Name={0}", name);
         }
 
         public StateForTest GetProviderState()
@@ -101,7 +116,7 @@ namespace SharedOrleansUtils
                 if (!storedDict.ContainsKey(stateStoreKey))
                 {
                     storedDict[stateStoreKey] = Activator.CreateInstance(stateType);
-                }
+                } 
 
                 var storedState = storedDict[stateStoreKey];
                 var field = storedState.GetType().GetProperty(name).GetSetMethod(true);
@@ -118,7 +133,7 @@ namespace SharedOrleansUtils
 
         public T GetLastState<T>()
         {
-            return (T)LastState;
+            return (T) LastState;
         }
 
         private object GetLastState(string grainType, GrainReference grainReference, IGrainState grainState)
@@ -137,24 +152,6 @@ namespace SharedOrleansUtils
                 LastState = storedState;
                 return storedState;
             }
-        }
-
-        #region IStorageProvider methods
-        public virtual Task Init(string name, IProviderRuntime providerRuntime, IProviderConfiguration config)
-        {
-            this.Name = name;
-            string loggerName = string.Format("Storage.{0}-{1}", this.GetType().Name, _id);
-            this.logger = providerRuntime.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(loggerName);
-
-            logger.Info(0, "Init Name={0} Config={1}", name, config);
-            this.serializationManager = providerRuntime.ServiceProvider.GetRequiredService<SerializationManager>();
-            Interlocked.Increment(ref initCount);
-
-            //blocked by port HierarchicalKeyStore to coreclr
-            StateStore = new HierarchicalKeyStore(numKeys);
-
-            logger.Info(0, "Finished Init Name={0} Config={1}", name, config);
-            return Task.CompletedTask;
         }
 
         public virtual Task Close()
@@ -184,7 +181,7 @@ namespace SharedOrleansUtils
             lock (StateStore)
             {
                 var storedState = this.serializationManager.DeepCopy(grainState.State); // Store current state data
-                var stateStore = new Dictionary<string, object> { { stateStoreKey, storedState } };
+                var stateStore = new Dictionary<string, object> {{ stateStoreKey, storedState }};
                 StateStore.WriteRow(MakeGrainStateKeys(grainType, grainReference), stateStore, grainState.ETag);
 
                 LastId = GetId(grainReference);
@@ -206,7 +203,6 @@ namespace SharedOrleansUtils
             }
             return Task.CompletedTask;
         }
-        #endregion
 
         private static string GetId(GrainReference grainReference)
         {
@@ -229,7 +225,6 @@ namespace SharedOrleansUtils
             LastState = null;
         }
 
-        #region IControllable interface methods
         /// <summary>
         /// A function to execute a control command.
         /// </summary>
@@ -242,8 +237,8 @@ namespace SharedOrleansUtils
                 case Commands.InitCount:
                     return Task.FromResult<object>(initCount);
                 case Commands.SetValue:
-                    SetValue((SetValueArgs)arg);
-                    return Task.FromResult<object>(true);
+                    SetValue((SetValueArgs) arg);
+                    return Task.FromResult<object>(true); 
                 case Commands.GetProvideState:
                     return Task.FromResult<object>(GetProviderState());
                 case Commands.GetLastState:
@@ -252,9 +247,8 @@ namespace SharedOrleansUtils
                     ResetHistory();
                     return Task.FromResult<object>(true);
                 default:
-                    return Task.FromResult<object>(true);
+                    return Task.FromResult<object>(true); 
             }
         }
-        #endregion
     }
 }
