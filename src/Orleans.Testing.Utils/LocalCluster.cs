@@ -35,13 +35,9 @@ namespace Orleans.Testing.Utils
             return _siloHost.StopAsync(cancellationToken);
         }
 
-        public async void Dispose()
+        public void Dispose()
         {
-            using (var cts = new CancellationTokenSource())
-            {
-                cts.Cancel();
-                await StopAsync(cts.Token);
-            }
+            StopAsync().Wait();
         }
 
         public Task Dispatch(Func<Task> func)
