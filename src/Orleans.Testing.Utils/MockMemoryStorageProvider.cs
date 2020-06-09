@@ -6,6 +6,7 @@ using Orleans.Runtime;
 using Orleans.Serialization;
 using Orleans.Storage;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -20,6 +21,13 @@ namespace Orleans.Testing.Utils
     [DebuggerDisplay("MockStorageProvider:{Name}")]
     public class MockMemoryStorageProvider : IControllable, IGrainStorage
     {
+        public enum Operation
+        {
+            Read,
+            Write,
+            Clear
+        }
+
         public enum Commands
         {
             InitCount,
@@ -51,6 +59,7 @@ namespace Orleans.Testing.Utils
         private ILogger logger;
         public string LastId { get; private set; }
         public object LastState { get; private set; }
+        private readonly IDictionary<Operation, IDictionary<(string GrainType, string GrainKey), AwaitableCallbackState>> _awaitables = new ConcurrentDictionary<Operation, IDictionary<(string GrainType, string GrainKey), AwaitableCallbackState>>();
 
         public string Name { get; private set; }
 
@@ -75,6 +84,10 @@ namespace Orleans.Testing.Utils
             Interlocked.Increment(ref initCount);
 
             StateStore = new HierarchicalKeyStore(numKeys);
+
+            this._awaitables.Add(Operation.Read, new ConcurrentDictionary<(string GrainType, string GrainKey), AwaitableCallbackState>());
+            this._awaitables.Add(Operation.Write, new ConcurrentDictionary<(string GrainType, string GrainKey), AwaitableCallbackState>());
+            this._awaitables.Add(Operation.Clear, new ConcurrentDictionary<(string GrainType, string GrainKey), AwaitableCallbackState>());
 
             logger.Info(0, "Finished Init Name={0}", name);
         }
@@ -171,6 +184,13 @@ namespace Orleans.Testing.Utils
                 var storedState = GetLastState(grainType, grainReference, grainState);
                 grainState.State = this.serializationManager.DeepCopy(storedState); // Read current state data
             }
+
+            if (_awaitables[Operation.Read].TryGetValue((grainType, grainReference.ToKeyString()), out var awaitable))
+            {
+                if (--awaitable.CallsUntilCallback == 0)
+                    awaitable.Callback.Invoke();
+            }
+
             return Task.CompletedTask;
         }
 
@@ -187,6 +207,13 @@ namespace Orleans.Testing.Utils
                 LastId = GetId(grainReference);
                 LastState = storedState;
             }
+
+            if (_awaitables[Operation.Write].TryGetValue((grainType, grainReference.ToKeyString()), out var awaitable))
+            {
+                if (--awaitable.CallsUntilCallback == 0)
+                    awaitable.Callback.Invoke();
+            }
+
             return Task.CompletedTask;
         }
 
@@ -201,6 +228,13 @@ namespace Orleans.Testing.Utils
                 LastId = GetId(grainReference);
                 LastState = null;
             }
+
+            if (_awaitables[Operation.Clear].TryGetValue((grainType, grainReference.ToKeyString()), out var awaitable))
+            {
+                if (--awaitable.CallsUntilCallback == 0)
+                   awaitable.Callback.Invoke();
+            }
+
             return Task.CompletedTask;
         }
 
@@ -248,6 +282,29 @@ namespace Orleans.Testing.Utils
                     return Task.FromResult<object>(true);
                 default:
                     return Task.FromResult<object>(true); 
+            }
+        }
+
+        public Task GetOperationAwaitable(string grainType, GrainReference grain, Operation operation, int calls, object args = null)
+        {
+            var tcs = new TaskCompletionSource<object>();
+            var grainKey = (grainType, grain.ToKeyString());
+            _awaitables[operation].Add(grainKey, new AwaitableCallbackState(calls, () => {
+                _awaitables[operation].Remove(grainKey);
+                tcs.SetResult(args);
+            }));
+            return tcs.Task;
+        }
+
+        public class AwaitableCallbackState
+        {
+            public int CallsUntilCallback { get; set; }
+            public readonly Action Callback;
+
+            public AwaitableCallbackState(int callsUntilCallback, Action callback)
+            {
+                CallsUntilCallback = callsUntilCallback;
+                Callback = callback;
             }
         }
     }

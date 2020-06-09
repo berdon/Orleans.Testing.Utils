@@ -175,6 +175,15 @@ namespace Orleans.Testing.Utils
             await storageProvider.WriteStateAsync(typeof(TGrain).FullName, grain as GrainReference, new GrainState<TGrainState>(grainState));
         }
 
+        public Task WaitForStateOperationAsync<TGrain, TGrainState>(IGrain grain, MockMemoryStorageProvider.Operation operation, string storageProviderName, int calls = 1, object args = null)
+            where TGrain : Grain<TGrainState>, IGrain
+            where TGrainState : new()
+        {
+            var storageProvider = ClusterServices.GetServiceByName<IGrainStorage>(storageProviderName) as MockMemoryStorageProvider;
+            if (storageProvider == null) throw new Exception("Storage provider must be a MockMemoryStorageProvider");
+            return storageProvider.GetOperationAwaitable(typeof(TGrain).FullName, grain as GrainReference, operation, calls, args);
+        }
+
         public IStreamProvider GetStreamProvider(string providerName)
         {
             EnsureClusterIsRunning();
