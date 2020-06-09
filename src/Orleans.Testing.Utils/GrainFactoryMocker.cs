@@ -157,7 +157,7 @@ namespace Orleans.Testing.Utils
             return this;
         }
 
-        public GrainFactoryMocker PassThruGuidCompoundGrain<TGrain>(Guid? guid, string id)
+        public GrainFactoryMocker PassThruGuidCompoundGrain<TGrain>(Guid? guid = null, string id = null)
             where TGrain : class, IGrainWithGuidCompoundKey
         {
             Mock
